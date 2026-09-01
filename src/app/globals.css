@@ -1,26 +1,218 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@custom-variant dark (&:is(.dark *));
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-sans);
   --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+
+  /* Brand ramp - Synerax emerald. Use for gradients, glows and accents. */
+  --color-brand-50: var(--brand-50);
+  --color-brand-100: var(--brand-100);
+  --color-brand-200: var(--brand-200);
+  --color-brand-300: var(--brand-300);
+  --color-brand-400: var(--brand-400);
+  --color-brand-500: var(--brand-500);
+  --color-brand-600: var(--brand-600);
+  --color-brand-700: var(--brand-700);
+  --color-brand-800: var(--brand-800);
+  --color-brand-900: var(--brand-900);
+  --color-brand-950: var(--brand-950);
+
+  /* The two supporting marks from the brand sheet: ochre and warm ink. */
+  --color-gold: var(--gold);
+  --color-gold-soft: var(--gold-soft);
+  --color-ink: var(--ink);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* Premium elevation: crisp edge, soft drop, subtle brand aura. */
+  --shadow-soft:
+    0 1px 2px -1px oklch(0.22 0.03 172 / 0.1),
+    0 1px 3px 0 oklch(0.22 0.03 172 / 0.06);
+  --shadow-card:
+    0 1px 0 oklch(1 0 0 / 0.78) inset,
+    0 1px 2px -1px oklch(0.22 0.03 172 / 0.1),
+    0 12px 28px -18px oklch(0.22 0.03 172 / 0.28);
+  --shadow-lift:
+    0 1px 0 oklch(1 0 0 / 0.85) inset,
+    0 8px 16px -12px oklch(0.22 0.03 172 / 0.25),
+    0 24px 54px -26px oklch(0.22 0.03 172 / 0.38);
+  --shadow-brand:
+    0 1px 0 oklch(1 0 0 / 0.18) inset,
+    0 8px 18px -10px oklch(0.478 0.09 170.7 / 0.55),
+    0 18px 38px -20px oklch(0.478 0.09 170.7 / 0.45);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+:root {
+  --radius: 0.875rem;
+
+  /*
+   * Brand - Synerax emerald. `brand-600` is #0F6E56 from the identity sheet;
+   * the rest of the ramp is built around it at a constant hue.
+   */
+  --brand-50: oklch(0.962 0.02 168);
+  --brand-100: oklch(0.925 0.038 168.5);
+  --brand-200: oklch(0.868 0.058 169);
+  --brand-300: oklch(0.782 0.078 169.5);
+  --brand-400: oklch(0.672 0.088 170);
+  --brand-500: oklch(0.56 0.092 170.3);
+  --brand-600: oklch(0.478 0.09 170.7);
+  --brand-700: oklch(0.412 0.079 171);
+  --brand-800: oklch(0.35 0.066 171.5);
+  --brand-900: oklch(0.298 0.054 172);
+  --brand-950: oklch(0.212 0.038 173);
+
+  /* #BA7517 and #2C2C2A — the accent and ink the brand sheet pairs green with. */
+  --gold: oklch(0.6 0.128 63);
+  --gold-soft: oklch(0.955 0.032 78);
+  --ink: oklch(0.26 0.003 100);
+
+  /* Neutrals - warm porcelain, faintly green so the brand sits naturally. */
+  --background: oklch(0.982 0.005 170);
+  --foreground: oklch(0.19 0.02 172);
+  --card: oklch(0.998 0.002 170);
+  --card-foreground: oklch(0.19 0.02 172);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.21 0.02 172);
+  --primary: oklch(0.478 0.09 170.7);
+  --primary-foreground: oklch(0.985 0.004 170);
+  --secondary: oklch(0.961 0.01 170);
+  --secondary-foreground: oklch(0.28 0.022 172);
+  --muted: oklch(0.953 0.01 170);
+  --muted-foreground: oklch(0.545 0.02 172);
+  --accent: oklch(0.962 0.02 168);
+  --accent-foreground: oklch(0.412 0.079 171);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.895 0.012 172);
+  --input: oklch(0.895 0.012 172);
+  --ring: oklch(0.56 0.092 170.3);
+  --chart-1: oklch(0.478 0.09 170.7);
+  --chart-2: oklch(0.56 0.092 170.3);
+  --chart-3: oklch(0.672 0.088 170);
+  --chart-4: oklch(0.6 0.128 63);
+  --chart-5: oklch(0.869 0.015 172);
+  --sidebar: oklch(0.985 0.004 170);
+  --sidebar-foreground: oklch(0.21 0.02 172);
+  --sidebar-primary: oklch(0.478 0.09 170.7);
+  --sidebar-primary-foreground: oklch(0.985 0.004 170);
+  --sidebar-accent: oklch(0.962 0.02 168);
+  --sidebar-accent-foreground: oklch(0.412 0.079 171);
+  --sidebar-border: oklch(0.929 0.01 172);
+  --sidebar-ring: oklch(0.56 0.092 170.3);
+}
+
+.dark {
+  /* The ramp inverts: 50 is the darkest tint, 950 the lightest wash. */
+  --brand-50: oklch(0.252 0.042 173);
+  --brand-100: oklch(0.318 0.056 172);
+  --brand-200: oklch(0.368 0.068 171.5);
+  --brand-300: oklch(0.428 0.08 171);
+  --brand-400: oklch(0.492 0.09 170.7);
+  --brand-500: oklch(0.572 0.094 170.3);
+  --brand-600: oklch(0.672 0.088 170);
+  --brand-700: oklch(0.772 0.076 169.5);
+  --brand-800: oklch(0.858 0.056 169);
+  --brand-900: oklch(0.922 0.036 168.5);
+  --brand-950: oklch(0.962 0.02 168);
+
+  --gold: oklch(0.72 0.118 68);
+  --gold-soft: oklch(0.36 0.06 66);
+  --ink: oklch(0.16 0.003 100);
+
+  --background: oklch(0.204 0.016 172);
+  --foreground: oklch(0.984 0.003 170);
+  --card: oklch(0.268 0.018 172);
+  --card-foreground: oklch(0.984 0.003 170);
+  --popover: oklch(0.268 0.018 172);
+  --popover-foreground: oklch(0.984 0.003 170);
+  --primary: oklch(0.672 0.088 170);
+  --primary-foreground: oklch(0.19 0.02 172);
+  --secondary: oklch(0.358 0.02 172);
+  --secondary-foreground: oklch(0.984 0.003 170);
+  --muted: oklch(0.358 0.02 172);
+  --muted-foreground: oklch(0.706 0.018 172);
+  --accent: oklch(0.358 0.02 172);
+  --accent-foreground: oklch(0.984 0.003 170);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.572 0.094 170.3);
+  --chart-1: oklch(0.672 0.088 170);
+  --chart-2: oklch(0.572 0.094 170.3);
+  --chart-3: oklch(0.772 0.076 169.5);
+  --chart-4: oklch(0.72 0.118 68);
+  --chart-5: oklch(0.446 0.022 172);
+  --sidebar: oklch(0.268 0.018 172);
+  --sidebar-foreground: oklch(0.984 0.003 170);
+  --sidebar-primary: oklch(0.672 0.088 170);
+  --sidebar-primary-foreground: oklch(0.19 0.02 172);
+  --sidebar-accent: oklch(0.358 0.02 172);
+  --sidebar-accent-foreground: oklch(0.984 0.003 170);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.572 0.094 170.3);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
   }
-}
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  body {
+    @apply bg-background text-foreground;
+    background-image:
+      linear-gradient(180deg, oklch(1 0 0 / 0.86), oklch(0.982 0.005 170 / 0.92)),
+      radial-gradient(56rem 30rem at 80% -12%, oklch(0.925 0.038 168.5 / 0.7), transparent 62%),
+      radial-gradient(42rem 26rem at -8% 22%, oklch(0.955 0.032 78 / 0.35), transparent 58%);
+    background-attachment: fixed;
+  }
+  html {
+    @apply font-sans;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  h1,
+  h2,
+  h3 {
+    @apply font-heading;
+  }
 }
