@@ -216,3 +216,61 @@
     @apply font-heading;
   }
 }
+
+/* -------------------------------------------------------------------------- */
+/*                                  Printing                                  */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * Anything inside `.print-area` goes to paper; everything else — the sidebar,
+ * the topbar, the toolbar above the sheet — disappears. Done with `visibility`
+ * rather than `display` so the app shell never has to know a print exists, and
+ * no other screen's markup needs a class added to it.
+ */
+@media print {
+  @page {
+    size: A4;
+    margin: 10mm;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+    background-image: none !important;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  .print-area,
+  .print-area * {
+    visibility: visible;
+  }
+
+  .print-area {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Colour matters on a certificate — keep the browser from stripping it. */
+  .print-area * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* One artefact per sheet where the design asks for it. */
+  .print-page-break {
+    break-after: page;
+    page-break-after: always;
+  }
+
+  .print-avoid-break {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}

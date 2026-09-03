@@ -21,6 +21,7 @@ import {
   TriangleAlert,
   User,
   Users,
+  UsersRound,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -29,6 +30,7 @@ import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { DocumentsTab } from "@/components/students/documents-tab";
 import { EnrollmentTab } from "@/components/students/enrollment-tab";
 import { GuardiansTab } from "@/components/students/guardians-tab";
+import { SiblingsPanel } from "@/components/students/siblings-panel";
 import { StudentFormDialog } from "@/components/students/student-form-dialog";
 import { DetailItem, Panel } from "@/components/shared/panel";
 import { Button } from "@/components/ui/button";
@@ -46,6 +48,7 @@ import { formatDate, humanizeToken, initialsFrom } from "@/lib/format";
 const TABS = [
   { value: "overview", label: "Overview", icon: IdCard },
   { value: "guardians", label: "Guardians", icon: Users },
+  { value: "siblings", label: "Siblings", icon: UsersRound },
   { value: "documents", label: "Documents", icon: FileText },
   { value: "enrollment", label: "Enrollment", icon: School },
 ];
@@ -377,6 +380,10 @@ export function ClerkStudentDetailView({ studentId }: { studentId: string }) {
 
         <TabsContent value="guardians">
           <GuardiansTab studentId={studentId} />
+        </TabsContent>
+
+        <TabsContent value="siblings">
+          <SiblingsPanel studentId={studentId} />
         </TabsContent>
 
         <TabsContent value="documents">

@@ -40,6 +40,7 @@ import {
   type HistoryTarget,
 } from "@/components/fees/payment-history-dialog";
 import { FeeStatusBadge } from "@/components/fees/status-badge";
+import { SiblingHint } from "@/components/students/siblings-panel";
 import { SectionEmpty, SectionError } from "@/components/shared/form-field";
 import { Panel } from "@/components/shared/panel";
 import { Button } from "@/components/ui/button";
@@ -412,6 +413,10 @@ function BillingPanel({
 
   return (
     <>
+      {/* Sits above the fees, because the concession has to be decided before
+          the payment is taken — not after the receipt is printed. */}
+      <SiblingHint studentId={student.id} />
+
       <Panel
         title={`${name}'s fees`}
         description={

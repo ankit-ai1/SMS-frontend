@@ -6,12 +6,13 @@ import {
   BookOpen,
   Bus,
   CalendarCheck,
+  CalendarDays,
   ChartColumn,
   ClipboardCheck,
-  Clock,
   Cake,
   Download,
   FileBadge,
+  FileText,
   GraduationCap,
   Headphones,
   IdCard,
@@ -19,7 +20,6 @@ import {
   MessageSquare,
   NotebookPen,
   Quote,
-  ScanFace,
   ShieldCheck,
   Sparkles,
   Star,
@@ -103,23 +103,28 @@ export function FeatureStrip() {
 /*                                   Modules                                  */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Every one of these is a screen that exists and works. Nothing aspirational
+ * belongs on this grid — a school that asks for a demo of a module named here
+ * has to be shown it working.
+ */
 const MODULES = [
   { icon: ChartColumn, label: "Analysis Reports" },
   { icon: Users, label: "Sibling Fee" },
   { icon: IdCard, label: "Staff & Student ID" },
-  { icon: FileBadge, label: "Report Card" },
-  { icon: Ticket, label: "Admit Card" },
+  { icon: FileBadge, label: "Report Cards" },
+  { icon: Ticket, label: "Admit Cards" },
   { icon: BadgeCheck, label: "Certificates" },
   { icon: Award, label: "Achiever's Awards" },
   { icon: Cake, label: "Birthday Greetings" },
   { icon: Armchair, label: "Seating Plan" },
-  { icon: NotebookPen, label: "Class Tests" },
+  { icon: FileText, label: "Document Vault" },
   { icon: ShieldCheck, label: "Gate Pass" },
   { icon: Bus, label: "Transport" },
-  { icon: BellRing, label: "Notifications" },
+  { icon: BellRing, label: "Notices" },
   { icon: Laptop, label: "Online Classes" },
-  { icon: Clock, label: "Range Attendance" },
-  { icon: ScanFace, label: "Face Attendance" },
+  { icon: CalendarCheck, label: "Leave Approvals" },
+  { icon: CalendarDays, label: "School Calendar" },
 ] as const;
 
 export function ModulesSection() {

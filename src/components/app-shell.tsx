@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ChevronDown, GraduationCap, LogOut, Menu, ShieldCheck } from "lucide-react";
 
+import { NoticeBell } from "@/components/notifications/notice-bell";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -276,6 +277,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </h1>
 
           <div className="ml-auto flex items-center gap-2 sm:gap-3">
+            <NoticeBell />
+
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button

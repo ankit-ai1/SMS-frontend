@@ -14,62 +14,30 @@ import { useSchoolScope, yearLabel } from "@/components/principal/use-school-sco
 import { SummaryPanel } from "@/components/attendance/summary-panel";
 import { Field, SectionEmpty } from "@/components/shared/form-field";
 import { Panel } from "@/components/shared/panel";
-import { sectionLabel } from "@/components/shared/section-picker";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { getAttendanceSummary, type Section } from "@/lib/api";
+import {
+  getAttendanceReport,
+  type AcademicYear,
+  type AttendanceReport,
+  type AttendanceReportSection,
+  type Section,
+} from "@/lib/api";
 import { formatNumber } from "@/lib/format";
 
 const CURRENT_MONTH = new Date().toISOString().slice(0, 7);
 
-/** Sections are fetched one at a time; a small pool keeps a big school quick. */
-const CONCURRENCY = 4;
-
-type SectionAverage = {
-  section: Section;
-  /** Null when the section has no marked days in the month. */
-  percent: number | null;
-  students: number;
-  belowThreshold: number;
-};
-
-type Loaded = {
-  /** The month this data answers — see `requestKey` below. */
-  requestKey: string;
-  rows: SectionAverage[];
-};
-
-async function mapWithPool<T, R>(
-  items: T[],
-  limit: number,
-  worker: (item: T) => Promise<R>
-): Promise<R[]> {
-  const results = new Array<R>(items.length);
-  let cursor = 0;
-
-  async function run(): Promise<void> {
-    while (cursor < items.length) {
-      const index = cursor++;
-      results[index] = await worker(items[index]);
-    }
-  }
-
-  await Promise.all(
-    Array.from({ length: Math.min(limit, items.length) }, () => run())
-  );
-  return results;
-}
-
 /** Green is fine, amber needs watching, red needs a conversation. */
 function barTone(percent: number): string {
-  if (percent >= 90) return "bg-emerald-500";
-  if (percent >= 75) return "bg-amber-500";
+  if (percent >= 90) return "bg-brand-500";
+  if (percent >= 75) return "bg-gold";
   return "bg-destructive";
 }
 
-function SectionRow({ row }: { row: SectionAverage }) {
-  const hasRecords = row.percent !== null;
+function SectionRow({ row }: { row: AttendanceReportSection }) {
+  const percent = row.average_attendance_pct;
+  const hasRecords = percent !== null;
 
   return (
     <li className="flex flex-wrap items-center gap-x-4 gap-y-3 px-4 py-3.5 transition-colors hover:bg-muted/40">
@@ -79,12 +47,14 @@ function SectionRow({ row }: { row: SectionAverage }) {
 
       <div className="min-w-0 flex-1 basis-48">
         <p className="truncate text-sm font-semibold">
-          {sectionLabel(row.section)}
+          {[row.class_name?.trim(), row.section_name?.trim()]
+            .filter(Boolean)
+            .join(" — ") || `Section ${row.section_id}`}
         </p>
         <p className="mt-0.5 truncate text-xs text-muted-foreground tabular-nums">
           {hasRecords
-            ? `${formatNumber(row.students)} tracked · ${formatNumber(
-                row.belowThreshold
+            ? `${formatNumber(row.students_with_records)} tracked · ${formatNumber(
+                row.below_75_count
               )} below 75%`
             : "No attendance marked"}
         </p>
@@ -94,17 +64,17 @@ function SectionRow({ row }: { row: SectionAverage }) {
         <div
           className="h-2 flex-1 overflow-hidden rounded-full bg-muted"
           role="img"
-          aria-label={`${Math.round(row.percent ?? 0)} percent present`}
+          aria-label={`${Math.round(percent ?? 0)} percent present`}
         >
           <div
             className={`h-full rounded-full transition-[width] duration-300 ${barTone(
-              row.percent ?? 0
+              percent ?? 0
             )}`}
-            style={{ width: `${hasRecords ? row.percent : 0}%` }}
+            style={{ width: `${hasRecords ? percent : 0}%` }}
           />
         </div>
         <span className="w-12 shrink-0 text-right text-sm font-semibold tabular-nums">
-          {hasRecords ? `${Math.round(row.percent ?? 0)}%` : "—"}
+          {hasRecords ? `${Math.round(percent ?? 0)}%` : "—"}
         </span>
       </div>
     </li>
@@ -115,58 +85,40 @@ function SectionRow({ row }: { row: SectionAverage }) {
 /*                             School-wide summary                            */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * The whole school in one request. This used to fan out to one call per
+ * section and add the averages up here; `/reports/attendance` now does that
+ * work in a single query, which also makes the below-75 count correct —
+ * it is counted per student rather than off each section's average.
+ */
 function SchoolPanel({
-  sections,
+  year,
   month,
   onMonthChange,
 }: {
-  sections: Section[];
+  year: AcademicYear;
   month: string;
   onMonthChange: (value: string) => void;
 }) {
-  const [loaded, setLoaded] = React.useState<Loaded | null>(null);
+  const [loaded, setLoaded] = React.useState<{
+    requestKey: string;
+    report: AttendanceReport;
+  } | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const [reloadKey, setReloadKey] = React.useState(0);
 
   // Identifies the data the controls ask for. Loading is then simply "what we
   // hold isn't what we asked for" — no loading flag to keep in sync.
-  const requestKey = `${month}|${sections.map((s) => s.id).join(",")}`;
+  const requestKey = `${year.id}|${month}|${reloadKey}`;
 
   React.useEffect(() => {
-    if (!month || sections.length === 0) return;
+    if (!month) return;
     let cancelled = false;
 
-    mapWithPool(sections, CONCURRENCY, async (section): Promise<SectionAverage> => {
-      // One weak section must not blank the whole report.
-      const summary = await getAttendanceSummary({
-        section_id: section.id,
-        month,
-      }).catch(() => []);
-
-      const tracked = summary.filter((row) => Number(row.total_days) > 0);
-      if (tracked.length === 0) {
-        return { section, percent: null, students: 0, belowThreshold: 0 };
-      }
-
-      // `present_pct` may be a percentage or a 0–1 fraction. A whole section
-      // sitting at 1% or below is not a real case, so read that as fractions.
-      const asFraction = tracked.every((row) => Number(row.present_pct) <= 1);
-      const percents = tracked.map((row) => {
-        const raw = Number(row.present_pct);
-        const value = asFraction ? raw * 100 : raw;
-        return Number.isFinite(value) ? Math.min(100, Math.max(0, value)) : 0;
-      });
-
-      return {
-        section,
-        percent:
-          percents.reduce((sum, value) => sum + value, 0) / percents.length,
-        students: tracked.length,
-        belowThreshold: percents.filter((value) => value < 75).length,
-      };
-    })
-      .then((rows) => {
+    getAttendanceReport({ academic_year_id: year.id, month })
+      .then((report) => {
         if (cancelled) return;
-        setLoaded({ requestKey, rows });
+        setLoaded({ requestKey, report });
         setError(null);
       })
       .catch((cause: unknown) => {
@@ -181,15 +133,13 @@ function SchoolPanel({
     return () => {
       cancelled = true;
     };
-  }, [requestKey, month, sections]);
+  }, [requestKey, year.id, month]);
 
-  const isStale = loaded?.requestKey !== requestKey;
-  const rows = loaded?.rows ?? [];
-  const tracked = rows.filter((row) => row.percent !== null);
-  const schoolAverage =
-    tracked.length > 0
-      ? tracked.reduce((sum, row) => sum + (row.percent ?? 0), 0) / tracked.length
-      : null;
+  const report = loaded?.requestKey === requestKey ? loaded.report : null;
+  // Worst first: the sections that need a conversation lead.
+  const sections = [...(report?.sections ?? [])].sort(
+    (a, b) => (a.average_attendance_pct ?? 101) - (b.average_attendance_pct ?? 101)
+  );
 
   return (
     <Panel
@@ -209,13 +159,7 @@ function SchoolPanel({
         </Field>
       </div>
 
-      {sections.length === 0 ? (
-        <SectionEmpty
-          icon={Layers}
-          title="No sections set up"
-          description="Once classes and sections exist for this year, their attendance shows up here."
-        />
-      ) : error ? (
+      {error ? (
         <div className="flex flex-col items-center justify-center px-6 py-12 text-center">
           <span className="flex size-12 items-center justify-center rounded-2xl bg-destructive/10 text-destructive">
             <TriangleAlert className="size-6" />
@@ -224,9 +168,25 @@ function SchoolPanel({
             Couldn&rsquo;t build this report
           </p>
           <p className="mt-1 max-w-sm text-sm text-muted-foreground">{error}</p>
+          <button
+            type="button"
+            onClick={() => {
+              setError(null);
+              setReloadKey((key) => key + 1);
+            }}
+            className="mt-4 rounded-xl px-3 py-1.5 text-sm font-bold text-brand-600 underline transition-colors hover:text-brand-700"
+          >
+            Try again
+          </button>
         </div>
-      ) : isStale ? (
+      ) : !report ? (
         <RowsSkeleton rows={5} />
+      ) : sections.length === 0 ? (
+        <SectionEmpty
+          icon={Layers}
+          title="No sections set up"
+          description="Once classes and sections exist for this year, their attendance shows up here."
+        />
       ) : (
         <>
           <div className="flex flex-wrap gap-6 border-b bg-muted/25 px-4 py-3.5">
@@ -235,7 +195,7 @@ function SchoolPanel({
                 Sections
               </p>
               <p className="mt-1 text-sm font-semibold tabular-nums">
-                {formatNumber(rows.length)}
+                {formatNumber(sections.length)}
               </p>
             </div>
             <div>
@@ -243,28 +203,25 @@ function SchoolPanel({
                 School average
               </p>
               <p className="mt-1 text-sm font-semibold tabular-nums">
-                {schoolAverage !== null ? `${Math.round(schoolAverage)}%` : "—"}
+                {report.totals.average_attendance_pct === null
+                  ? "—"
+                  : `${Math.round(report.totals.average_attendance_pct)}%`}
               </p>
             </div>
             <div>
               <p className="text-[0.6875rem] font-medium tracking-wide text-muted-foreground uppercase">
-                Sections below 75%
+                Students below 75%
               </p>
               <p className="mt-1 text-sm font-semibold tabular-nums">
-                {formatNumber(
-                  tracked.filter((row) => (row.percent ?? 0) < 75).length
-                )}
+                {formatNumber(report.totals.below_75_count)}
               </p>
             </div>
           </div>
 
           <ul className="divide-y">
-            {/* Worst first: the sections that need a conversation lead. */}
-            {[...rows]
-              .sort((a, b) => (a.percent ?? 101) - (b.percent ?? 101))
-              .map((row) => (
-                <SectionRow key={String(row.section.id)} row={row} />
-              ))}
+            {sections.map((row) => (
+              <SectionRow key={String(row.section_id)} row={row} />
+            ))}
           </ul>
         </>
       )}
@@ -318,14 +275,14 @@ export function PrincipalAttendanceView() {
       ) : (
         <>
           <SchoolPanel
-            sections={scope.sections}
+            year={scope.year}
             month={month}
             onMonthChange={setMonth}
           />
 
           {/* The admin summary panel reads only — a principal gets it unchanged. */}
           <SummaryPanel
-            sections={scope.sections}
+            sections={scope.sections as Section[]}
             sectionId={sectionId}
             onSectionChange={setSectionId}
           />

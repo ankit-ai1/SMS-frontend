@@ -724,6 +724,71 @@ export function deleteStudent(
   });
 }
 
+/* --------------------------------- Birthdays ------------------------------ */
+
+/** A student on a birthday list — a deliberately narrow slice of the record. */
+export type StudentBirthday = {
+  id: string | number;
+  first_name: string;
+  last_name: string;
+  admission_number: string;
+  date_of_birth: string;
+  /** Null when the student has no enrolment in the current academic year. */
+  class_name?: string | null;
+  section_name?: string | null;
+};
+
+/**
+ * Whose birthday falls on a given day. Omit both parts for today — resolved in
+ * the school's own timezone by the backend, not the server's UTC clock.
+ *
+ * The backend rejects one half of the date without the other, so the pair is
+ * sent together or not at all rather than letting a half-filled form 400.
+ */
+export function listBirthdays(
+  query: { month?: number | string | null; day?: number | string | null } = {}
+): Promise<StudentBirthday[]> {
+  const params = new URLSearchParams();
+  const hasMonth = query.month != null && query.month !== "";
+  const hasDay = query.day != null && query.day !== "";
+
+  if (hasMonth && hasDay) {
+    params.set("month", String(query.month));
+    params.set("day", String(query.day));
+  }
+
+  const suffix = params.toString();
+  return authedList<StudentBirthday>(
+    `/api/v1/students/birthdays${suffix ? `?${suffix}` : ""}`
+  );
+}
+
+/* --------------------------------- Siblings ------------------------------- */
+
+/** A brother or sister also on the roll. */
+export type StudentSibling = {
+  id: string | number;
+  first_name: string;
+  last_name: string;
+  admission_number: string;
+  /** Null when the sibling has no enrolment in the current academic year. */
+  class_name?: string | null;
+  section_name?: string | null;
+};
+
+/**
+ * Students who share a guardian with this one — matched on the guardian's
+ * login, phone or email, never on their name.
+ *
+ * Inactive and withdrawn siblings are left out: the list exists to decide a
+ * sibling concession, and a brother who has left the school does not earn one.
+ */
+export function listSiblings(
+  studentId: string | number
+): Promise<StudentSibling[]> {
+  return authedList<StudentSibling>(`/api/v1/students/${studentId}/siblings`);
+}
+
 /* -------------------------------------------------------------------------- */
 /*                                 Guardians                                  */
 /* -------------------------------------------------------------------------- */
@@ -2515,6 +2580,717 @@ export function deleteUser(
   return authedFetch<{ deleted: boolean }>(`/api/v1/users/${id}`, {
     method: "DELETE",
   });
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                  Reports                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Aggregates the backend works out in one query. They exist because the same
+ * figures assembled on the client cost one request per section or per student —
+ * a twenty-section school meant twenty round trips for a single screen.
+ */
+
+export type AttendanceReportSection = {
+  section_id: string | number;
+  section_name: string;
+  class_id?: string | number | null;
+  class_name?: string | null;
+  students_with_records: number;
+  total_marked: number;
+  total_present: number;
+  /** Null when nothing has been marked — the section still gets a row. */
+  average_attendance_pct: number | null;
+  /** Counted per student, not off the section average. */
+  below_75_count: number;
+};
+
+export type AttendanceReport = {
+  academic_year_id: string | number;
+  month?: string | null;
+  sections: AttendanceReportSection[];
+  totals: {
+    total_marked: number;
+    total_present: number;
+    below_75_count: number;
+    average_attendance_pct: number | null;
+  };
+};
+
+export function getAttendanceReport(query: {
+  academic_year_id: string | number;
+  /** `YYYY-MM`. Omit for the whole year. */
+  month?: string | null;
+}): Promise<AttendanceReport> {
+  const params = new URLSearchParams({
+    academic_year_id: String(query.academic_year_id),
+  });
+  if (query.month) params.set("month", query.month);
+
+  return authedFetch<AttendanceReport>(
+    `/api/v1/reports/attendance?${params.toString()}`
+  );
+}
+
+export type FeeReportClass = {
+  class_id: string | number;
+  class_name: string;
+  students: number;
+  allocations: number;
+  billed: number;
+  collected: number;
+  outstanding: number;
+  unpaid_allocations: number;
+  /** Past its due date and still unpaid — the follow-up list. */
+  overdue_allocations: number;
+};
+
+export type FeeReport = {
+  classes: FeeReportClass[];
+  totals: {
+    billed: number;
+    collected: number;
+    outstanding: number;
+    collection_pct: number | null;
+  };
+};
+
+export function getFeeReport(query: {
+  academic_year_id: string | number;
+}): Promise<FeeReport> {
+  return authedFetch<FeeReport>(
+    `/api/v1/reports/fees?academic_year_id=${encodeURIComponent(
+      String(query.academic_year_id)
+    )}`
+  );
+}
+
+export type ExamReportSubject = {
+  exam_subject_id: string | number;
+  subject_name: string;
+  class_name?: string | null;
+  max_marks: number;
+  /** Echoed back so the screen can show which line "passed" was counted at. */
+  pass_marks: number;
+  graded: number;
+  average_marks: number | null;
+  highest_marks: number | null;
+  lowest_marks: number | null;
+  passed: number;
+  pass_pct: number | null;
+};
+
+export type ExamReport = {
+  exam: Exam;
+  subjects: ExamReportSubject[];
+  totals: { graded: number; passed: number; pass_pct: number | null };
+};
+
+export function getExamReport(query: {
+  exam_id: string | number;
+}): Promise<ExamReport> {
+  return authedFetch<ExamReport>(
+    `/api/v1/reports/exams?exam_id=${encodeURIComponent(String(query.exam_id))}`
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*                               Online classes                               */
+/* -------------------------------------------------------------------------- */
+
+export type OnlineClass = {
+  id: string | number;
+  section_id: string | number;
+  section_name?: string | null;
+  class_name?: string | null;
+  subject_id: string | number;
+  subject_name?: string | null;
+  title: string;
+  meeting_url: string;
+  scheduled_at: string;
+  duration_minutes?: number | null;
+  /** Joined server-side, so a student sees a person rather than an id. */
+  teacher_name?: string | null;
+  created_by?: string | number | null;
+};
+
+export type NewOnlineClass = {
+  section_id: string | number;
+  subject_id: string | number;
+  title: string;
+  meeting_url: string;
+  /** ISO timestamp. */
+  scheduled_at: string;
+  duration_minutes?: number;
+};
+
+/** The whole school's schedule. Parents and students get `mine` instead. */
+export function listOnlineClasses(
+  query: {
+    section_id?: string | number | null;
+    subject_id?: string | number | null;
+    from?: string | null;
+    to?: string | null;
+  } = {}
+): Promise<OnlineClass[]> {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value != null && value !== "") params.set(key, String(value));
+  }
+
+  const suffix = params.toString();
+  return authedList<OnlineClass>(
+    `/api/v1/online-classes${suffix ? `?${suffix}` : ""}`
+  );
+}
+
+/**
+ * The caller's own classes — a teacher's sections, a student's own, a parent's
+ * children's. Finished classes drop off an hour after they end, so the list
+ * never becomes a pile of dead meeting links.
+ */
+export function listMyOnlineClasses(): Promise<OnlineClass[]> {
+  return authedList<OnlineClass>("/api/v1/online-classes/mine");
+}
+
+export function createOnlineClass(
+  input: NewOnlineClass
+): Promise<{ id: string | number }> {
+  return authedFetch<{ id: string | number }>("/api/v1/online-classes", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function updateOnlineClass(
+  id: string | number,
+  patch: Partial<NewOnlineClass>
+): Promise<{ updated: boolean }> {
+  return authedFetch<{ updated: boolean }>(`/api/v1/online-classes/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(patch),
+  });
+}
+
+export function deleteOnlineClass(
+  id: string | number
+): Promise<{ deleted: boolean }> {
+  return authedFetch<{ deleted: boolean }>(`/api/v1/online-classes/${id}`, {
+    method: "DELETE",
+  });
+}
+
+/** Who puts a class on the timetable. */
+export function canScheduleOnlineClass(
+  role: UserRole | null | undefined
+): boolean {
+  return role === "super_admin" || role === "admin" || role === "teacher";
+}
+
+/** Who may read the whole school's schedule rather than just their own. */
+export function canSeeFullOnlineSchedule(
+  role: UserRole | null | undefined
+): boolean {
+  return canScheduleOnlineClass(role) || role === "principal" || role === "clerk";
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                  Transport                                 */
+/* -------------------------------------------------------------------------- */
+
+export type TransportRoute = {
+  id: string | number;
+  name: string;
+  vehicle_number?: string | null;
+  driver_name?: string | null;
+  driver_phone?: string | null;
+  capacity?: number | null;
+  /** Counted server-side, so a route list needs no follow-up requests. */
+  assigned_students: number;
+  stop_count: number;
+  is_active?: boolean;
+};
+
+export type NewTransportRoute = {
+  name: string;
+  vehicle_number?: string;
+  driver_name?: string;
+  driver_phone?: string;
+  capacity?: number;
+};
+
+/**
+ * A stop carries the fare, not the route: one bus can pick up at both ends of
+ * a city, and the far stop costs more.
+ */
+export type TransportStop = {
+  id: string | number;
+  route_id: string | number;
+  stop_name: string;
+  pickup_time?: string | null;
+  drop_time?: string | null;
+  monthly_fare: number;
+  assigned_students: number;
+};
+
+export type NewTransportStop = {
+  stop_name: string;
+  pickup_time?: string;
+  drop_time?: string;
+  monthly_fare: number;
+};
+
+export type TransportAssignment = {
+  id: string | number;
+  student_id: string | number;
+  student_name: string;
+  admission_number: string;
+  class_name?: string | null;
+  section_name?: string | null;
+  route_id: string | number;
+  route_name?: string | null;
+  stop_id: string | number;
+  stop_name?: string | null;
+  monthly_fare: number;
+  start_date: string;
+  /** Set when the ride has ended; the row is kept for the fee history. */
+  end_date?: string | null;
+};
+
+export type NewTransportAssignment = {
+  student_id: string | number;
+  route_id: string | number;
+  stop_id: string | number;
+  start_date?: string;
+};
+
+export type TransportFeeResult = {
+  allocations_created: number;
+  current_riders: number;
+  /** Riders with no enrolment this year — an allocation needs one. */
+  skipped: number;
+};
+
+export function listTransportRoutes(): Promise<TransportRoute[]> {
+  return authedList<TransportRoute>("/api/v1/transport/routes");
+}
+
+export function createTransportRoute(
+  input: NewTransportRoute
+): Promise<{ id: string | number }> {
+  return authedFetch<{ id: string | number }>("/api/v1/transport/routes", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function updateTransportRoute(
+  id: string | number,
+  patch: Partial<NewTransportRoute>
+): Promise<{ updated: boolean }> {
+  return authedFetch<{ updated: boolean }>(`/api/v1/transport/routes/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(patch),
+  });
+}
+
+/** Refused with 409 while anyone still rides it; the message counts them. */
+export function deleteTransportRoute(
+  id: string | number
+): Promise<{ deleted: boolean }> {
+  return authedFetch<{ deleted: boolean }>(`/api/v1/transport/routes/${id}`, {
+    method: "DELETE",
+  });
+}
+
+export function listTransportStops(
+  routeId: string | number
+): Promise<TransportStop[]> {
+  return authedList<TransportStop>(
+    `/api/v1/transport/routes/${routeId}/stops`
+  );
+}
+
+export function createTransportStop(
+  routeId: string | number,
+  input: NewTransportStop
+): Promise<{ id: string | number }> {
+  return authedFetch<{ id: string | number }>(
+    `/api/v1/transport/routes/${routeId}/stops`,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function deleteTransportStop(
+  routeId: string | number,
+  stopId: string | number
+): Promise<{ deleted: boolean }> {
+  return authedFetch<{ deleted: boolean }>(
+    `/api/v1/transport/routes/${routeId}/stops/${stopId}`,
+    { method: "DELETE" }
+  );
+}
+
+export function listTransportAssignments(
+  query: {
+    route_id?: string | number | null;
+    stop_id?: string | number | null;
+    student_id?: string | number | null;
+    /** False also returns rides that have ended. */
+    active?: boolean;
+  } = {}
+): Promise<TransportAssignment[]> {
+  const params = new URLSearchParams();
+  if (query.route_id) params.set("route_id", String(query.route_id));
+  if (query.stop_id) params.set("stop_id", String(query.stop_id));
+  if (query.student_id) params.set("student_id", String(query.student_id));
+  if (query.active === false) params.set("active", "false");
+
+  const suffix = params.toString();
+  return authedList<TransportAssignment>(
+    `/api/v1/transport/assignments${suffix ? `?${suffix}` : ""}`
+  );
+}
+
+/** Refused with 409 when the student already rides another bus. */
+export function createTransportAssignment(
+  input: NewTransportAssignment
+): Promise<TransportAssignment> {
+  return authedFetch<TransportAssignment>("/api/v1/transport/assignments", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/**
+ * Ends the ride rather than erasing it — the fee history is built against this
+ * row. `purge` removes it outright, which is only right for a mistake.
+ */
+export function endTransportAssignment(
+  id: string | number,
+  options: { purge?: boolean } = {}
+): Promise<{ deleted: boolean }> {
+  const suffix = options.purge ? "?purge=true" : "";
+  return authedFetch<{ deleted: boolean }>(
+    `/api/v1/transport/assignments/${id}${suffix}`,
+    { method: "DELETE" }
+  );
+}
+
+/** The student's current ride, or null when they do not take the bus. */
+export function getStudentTransport(
+  studentId: string | number
+): Promise<TransportAssignment | null> {
+  return authedFetch<TransportAssignment | null>(
+    `/api/v1/students/${studentId}/transport`
+  );
+}
+
+/**
+ * Bills every current rider their own stop's fare against one fee structure —
+ * the structure's amount is overridden per student, because a fare belongs to
+ * a stop while a structure belongs to a class.
+ *
+ * `month` is what makes it repeatable: allocations are unique per structure
+ * *per month*, so one "Transport Fee" structure bills every month of the year
+ * without the school creating twelve of them.
+ */
+export function generateTransportFees(input: {
+  fee_structure_id: string | number;
+  /** `YYYY-MM`. */
+  month: string;
+  due_date?: string;
+}): Promise<TransportFeeResult> {
+  return authedFetch<TransportFeeResult>("/api/v1/transport/fees/generate", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/** The office runs the buses. */
+export function canManageTransport(role: UserRole | null | undefined): boolean {
+  return role === "super_admin" || role === "admin" || role === "clerk";
+}
+
+/** Accounts bills them. */
+export function canBillTransport(role: UserRole | null | undefined): boolean {
+  return role === "super_admin" || role === "admin" || role === "accountant";
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                Exam seating                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A hall the school seats an exam in. `rows` and `columns` are the grid; the
+ * table behind them uses `row_count`/`column_count` because both words are
+ * reserved in Postgres, but the API keeps the plain names.
+ */
+export type ExamRoom = {
+  id: string | number;
+  name: string;
+  rows: number;
+  columns: number;
+  /** Fewer than the grid holds, when some desks are unusable. */
+  capacity?: number | null;
+  is_active?: boolean;
+};
+
+export type NewExamRoom = {
+  name: string;
+  rows: number;
+  columns: number;
+  capacity?: number;
+};
+
+export function listExamRooms(): Promise<ExamRoom[]> {
+  return authedList<ExamRoom>("/api/v1/exam-rooms");
+}
+
+/** Rejected with 400 when capacity exceeds the grid, 409 on a duplicate name. */
+export function createExamRoom(
+  input: NewExamRoom
+): Promise<{ id: string | number }> {
+  return authedFetch<{ id: string | number }>("/api/v1/exam-rooms", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export type SeatAllocation = {
+  row: number;
+  column: number;
+  student_id: string | number;
+  student_name: string;
+  admission_number: string;
+  class_name?: string | null;
+  section_name?: string | null;
+};
+
+export type SeatingRoom = {
+  room_id: string | number;
+  room: string;
+  rows: number;
+  columns: number;
+  seats: SeatAllocation[];
+};
+
+export type ExamSeating = {
+  exam: Exam;
+  rooms: SeatingRoom[];
+};
+
+export type SeatingResult = {
+  students_seated: number;
+  seats_available: number;
+  rooms_used: number;
+};
+
+export function getExamSeating(
+  examId: string | number
+): Promise<ExamSeating> {
+  return authedFetch<ExamSeating>(`/api/v1/exams/${examId}/seating`);
+}
+
+/**
+ * Lays the plan out afresh: the previous allocation is replaced inside one
+ * transaction, so a failed run leaves the old plan standing.
+ *
+ * Answers 400 when the rooms cannot hold everyone, or when they can but the
+ * no-neighbours-from-one-class rule leaves students unseatable. Both messages
+ * carry the numbers, so they are worth showing verbatim.
+ */
+export function generateSeating(
+  examId: string | number,
+  input: { section_ids: (string | number)[]; room_ids?: (string | number)[] }
+): Promise<SeatingResult> {
+  return authedFetch<SeatingResult>(
+    `/api/v1/exams/${examId}/seating/generate`,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                 Gate passes                                */
+/* -------------------------------------------------------------------------- */
+
+export const GATE_PASS_STATUSES = ["pending", "approved", "rejected"] as const;
+
+export type GatePassStatus = (typeof GATE_PASS_STATUSES)[number];
+
+/** Normalises a backend token (`PENDING`, `Approved`…) to a known status. */
+export function toGatePassStatus(
+  value: string | null | undefined
+): GatePassStatus | null {
+  const key = (value ?? "").trim().toLowerCase();
+  return (GATE_PASS_STATUSES as readonly string[]).includes(key)
+    ? (key as GatePassStatus)
+    : null;
+}
+
+export type GatePass = {
+  id: string | number;
+  student_id: string | number;
+  /** Joined server-side — the gate desk needs a name, not an id. */
+  student_name: string;
+  class_name?: string | null;
+  section_name?: string | null;
+  reason: string;
+  out_time: string;
+  /** Null when the student is not coming back today. */
+  expected_return?: string | null;
+  /** Free text — the backend's casing varies, so normalise before comparing. */
+  status: string;
+  approved_by?: string | number | null;
+  /** Joined server-side, so a decided pass names a person rather than an id. */
+  approved_by_name?: string | null;
+  decided_at?: string | null;
+  created_by?: string | number | null;
+  created_by_name?: string | null;
+  guardian_name?: string | null;
+  created_at: string;
+};
+
+export type NewGatePass = {
+  student_id: string | number;
+  reason: string;
+  guardian_name?: string;
+  /** Defaults to now when omitted. */
+  out_time?: string;
+  expected_return?: string;
+};
+
+export function listGatePasses(
+  query: { date?: string | null; status?: GatePassStatus | "" } = {}
+): Promise<GatePass[]> {
+  const params = new URLSearchParams();
+  if (query.date) params.set("date", query.date);
+  if (query.status) params.set("status", query.status);
+
+  const suffix = params.toString();
+  return authedList<GatePass>(
+    `/api/v1/gate-passes${suffix ? `?${suffix}` : ""}`
+  );
+}
+
+/**
+ * All three writes answer with the whole pass, in the same shape the list
+ * returns — so a decision can be spliced straight into the row rather than
+ * costing a second round trip.
+ */
+export function createGatePass(input: NewGatePass): Promise<GatePass> {
+  return authedFetch<GatePass>("/api/v1/gate-passes", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/** Refused with 409 once decided; the message names the status it is in. */
+export function approveGatePass(id: string | number): Promise<GatePass> {
+  return authedFetch<GatePass>(`/api/v1/gate-passes/${id}/approve`, {
+    method: "PUT",
+  });
+}
+
+export function rejectGatePass(id: string | number): Promise<GatePass> {
+  return authedFetch<GatePass>(`/api/v1/gate-passes/${id}/reject`, {
+    method: "PUT",
+  });
+}
+
+/** The front office raises a pass. */
+export function canCreateGatePass(role: UserRole | null | undefined): boolean {
+  return role === "super_admin" || role === "admin" || role === "clerk";
+}
+
+/** The office above it signs the pass off. */
+export function canDecideGatePass(role: UserRole | null | undefined): boolean {
+  return role === "super_admin" || role === "admin" || role === "principal";
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                  Notices                                   */
+/* -------------------------------------------------------------------------- */
+
+export const NOTICE_AUDIENCES = ["school", "role", "section", "user"] as const;
+
+export type NoticeAudience = (typeof NOTICE_AUDIENCES)[number];
+
+/**
+ * A notice in the signed-in user's own inbox.
+ *
+ * Named `SchoolNotice` rather than `Notification` on purpose: the DOM already
+ * has a global `Notification`, and a missing import would silently resolve to
+ * that instead of failing.
+ */
+export type SchoolNotice = {
+  id: string | number;
+  title: string;
+  body?: string | null;
+  audience: string;
+  created_at: string;
+  /** Null while unread — reads are tracked per user, not per notice. */
+  read_at?: string | null;
+  created_by?: string | number | null;
+};
+
+export type NewNotice = {
+  title: string;
+  body?: string;
+  audience: NoticeAudience;
+  /** Exactly one of these, matching `audience`. */
+  user_id?: string | number;
+  audience_role?: UserRole;
+  audience_section_id?: string | number;
+};
+
+/** The caller's own inbox — unread first, then newest. */
+export function listNotices(
+  query: { unread?: boolean } = {}
+): Promise<SchoolNotice[]> {
+  const suffix = query.unread ? "?unread=true" : "";
+  return authedList<SchoolNotice>(`/api/v1/notifications${suffix}`);
+}
+
+export function sendNotice(input: NewNotice): Promise<{ id: string | number }> {
+  return authedFetch<{ id: string | number }>("/api/v1/notifications", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/**
+ * Marks one notice read for the caller alone. A notice the caller cannot see
+ * answers 404 rather than 403, so its existence is not leaked either way.
+ */
+export function markNoticeRead(
+  id: string | number
+): Promise<{ updated: boolean }> {
+  return authedFetch<{ updated: boolean }>(
+    `/api/v1/notifications/${id}/read`,
+    { method: "PUT" }
+  );
+}
+
+export function markAllNoticesRead(): Promise<{ updated: number }> {
+  return authedFetch<{ updated: number }>("/api/v1/notifications/read-all", {
+    method: "PUT",
+  });
+}
+
+/** Withdraws a notice from everyone's inbox. Senders only. */
+export function deleteNotice(
+  id: string | number
+): Promise<{ deleted: boolean }> {
+  return authedFetch<{ deleted: boolean }>(`/api/v1/notifications/${id}`, {
+    method: "DELETE",
+  });
+}
+
+/** Who may send and withdraw a notice; everyone else only reads their own. */
+export function canSendNotices(role: UserRole | null | undefined): boolean {
+  return role === "super_admin" || role === "admin" || role === "principal";
 }
 
 /* -------------------------------------------------------------------------- */

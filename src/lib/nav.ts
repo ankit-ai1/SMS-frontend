@@ -1,15 +1,20 @@
 import {
+  Armchair,
   BadgeCheck,
+  Bus,
   CalendarCheck,
   CalendarDays,
   ChartColumn,
   ClipboardCheck,
   CreditCard,
+  DoorOpen,
   FileBadge,
   GraduationCap,
   HandCoins,
+  Laptop,
   LayoutDashboard,
   Library,
+  Printer,
   Receipt,
   SlidersHorizontal,
   Settings,
@@ -41,6 +46,12 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/exams", label: "Exams", icon: ShieldCheck },
   { href: "/calendar", label: "Calendar", icon: CalendarDays },
   { href: "/leave-approvals", label: "Leave Approvals", icon: BadgeCheck },
+  { href: "/reports", label: "Reports", icon: ChartColumn },
+  { href: "/gate-passes", label: "Gate Passes", icon: DoorOpen },
+  { href: "/seating", label: "Seating Plan", icon: Armchair },
+  { href: "/transport", label: "Transport", icon: Bus },
+  { href: "/online-classes", label: "Online Classes", icon: Laptop },
+  { href: "/print", label: "Print Centre", icon: Printer },
   { href: "/users", label: "Users", icon: Users },
   { href: "/setup", label: "Academic Setup", icon: SlidersHorizontal },
   { href: "/settings", label: "Settings", icon: Settings },
@@ -56,6 +67,7 @@ export const TEACHER_NAV_ITEMS: NavItem[] = [
   { href: "/teacher/classes", label: "My Classes", icon: Library },
   { href: "/teacher/attendance", label: "Attendance", icon: ClipboardCheck },
   { href: "/teacher/grades", label: "Grades", icon: SquarePen },
+  { href: "/online-classes", label: "Online Classes", icon: Laptop },
   { href: "/teacher/leave", label: "My Leave", icon: CalendarCheck },
 ];
 
@@ -65,6 +77,7 @@ export const PARENT_NAV_ITEMS: NavItem[] = [
   { href: "/parent/attendance", label: "Attendance", icon: ClipboardCheck },
   { href: "/parent/fees", label: "Fees", icon: CreditCard },
   { href: "/parent/reportcards", label: "Report Cards", icon: FileBadge },
+  { href: "/online-classes", label: "Online Classes", icon: Laptop },
   { href: "/parent/calendar", label: "Calendar", icon: CalendarDays },
 ];
 
@@ -84,7 +97,10 @@ export const PRINCIPAL_NAV_ITEMS: NavItem[] = [
   { href: "/principal/fees", label: "Fees", icon: Wallet },
   { href: "/principal/exams", label: "Exams", icon: ShieldCheck },
   { href: "/principal/calendar", label: "Calendar", icon: CalendarDays },
+  { href: "/reports", label: "Reports", icon: ChartColumn },
   { href: "/principal/leave", label: "Leave Approvals", icon: BadgeCheck },
+  { href: "/gate-passes", label: "Gate Passes", icon: DoorOpen },
+  { href: "/seating", label: "Seating Plan", icon: Armchair },
   { href: "/principal/my-leave", label: "My Leave", icon: CalendarCheck },
 ];
 
@@ -101,6 +117,7 @@ export const ACCOUNTANT_NAV_ITEMS: NavItem[] = [
   { href: "/accountant/fees", label: "Fees", icon: Wallet },
   { href: "/accountant/payments", label: "Payments", icon: Receipt },
   { href: "/accountant/reports", label: "Financial Reports", icon: ChartColumn },
+  { href: "/transport", label: "Transport", icon: Bus },
   { href: "/accountant/my-leave", label: "My Leave", icon: CalendarCheck },
 ];
 
@@ -115,6 +132,8 @@ export const CLERK_NAV_ITEMS: NavItem[] = [
   { href: "/clerk/students", label: "Students", icon: GraduationCap },
   { href: "/clerk/attendance", label: "Attendance", icon: ClipboardCheck },
   { href: "/clerk/calendar", label: "Calendar", icon: CalendarDays },
+  { href: "/transport", label: "Transport", icon: Bus },
+  { href: "/gate-passes", label: "Gate Passes", icon: DoorOpen },
   { href: "/clerk/my-leave", label: "My Leave", icon: CalendarCheck },
 ];
 
@@ -128,6 +147,7 @@ export const STUDENT_NAV_ITEMS: NavItem[] = [
   { href: "/student/attendance", label: "My Attendance", icon: ClipboardCheck },
   { href: "/student/fees", label: "My Fees", icon: CreditCard },
   { href: "/student/reportcards", label: "My Report Cards", icon: FileBadge },
+  { href: "/online-classes", label: "Online Classes", icon: Laptop },
   { href: "/student/calendar", label: "Calendar", icon: CalendarDays },
 ];
 
@@ -150,6 +170,9 @@ export function homePathFor(role: UserRole | null | undefined): string {
   if (role === "clerk") return "/clerk";
   return role === "teacher" ? "/teacher" : "/dashboard";
 }
+
+/** Screens the shell itself links to, so they belong to no single role's menu. */
+const SHARED_PATHS = ["/notifications"];
 
 /** Longest matching prefix wins, so nested routes keep their parent highlighted. */
 export function activeNavItem(
@@ -176,6 +199,13 @@ export function isPathAllowed(
   role: UserRole | null | undefined,
   pathname: string
 ): boolean {
+  // Reachable by every signed-in role, whatever their menu lists. The notice
+  // inbox is opened from the bell in the shell rather than from a menu, so it
+  // would otherwise bounce every role that has one.
+  if (SHARED_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`))) {
+    return true;
+  }
+
   const constrainedItems =
     role === "teacher"
       ? TEACHER_NAV_ITEMS
