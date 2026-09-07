@@ -26,11 +26,19 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import {
+  createEnrollment,
   createStudent,
+  getCurrentAcademicYear,
   getStudent,
+  listClasses,
+  listSections,
+  sameId,
   updateStudent,
+  type AcademicYear,
   type Gender,
   type NewStudent,
+  type SchoolClass,
+  type Section,
   type StudentDetail,
   type StudentPatch,
 } from "@/lib/api";
@@ -52,9 +60,45 @@ type FormValues = {
   religion: string;
   category: string;
   is_active: boolean;
+  class_id: string;
+  section_id: string;
+  roll_number: string;
 };
 
 type FormErrors = Partial<Record<keyof FormValues, string>>;
+
+/**
+ * What a new student can be placed into. Null when the school has no academic
+ * year or no sections yet — the form then drops the class fields rather than
+ * showing empty dropdowns nobody can satisfy.
+ */
+type Placement = {
+  year: AcademicYear;
+  classes: SchoolClass[];
+  sections: Section[];
+};
+
+/**
+ * Sections may or may not carry their class. When none of them do, filtering by
+ * class would leave the dropdown empty, so fall back to offering all of them.
+ */
+function sectionsForClass(sections: Section[], classId: string): Section[] {
+  if (!classId) return [];
+  const matching = sections.filter((section) =>
+    sameId(section.class_id, classId)
+  );
+  const anyTagged = sections.some((section) => section.class_id != null);
+  return anyTagged ? matching : sections;
+}
+
+/** "Class 8 — A" where the section knows its class, otherwise just "A". */
+function sectionLabel(sections: Section[], sectionId: string): string {
+  const section = sections.find((candidate) => sameId(candidate.id, sectionId));
+  if (!section) return "their section";
+  return section.class_name
+    ? `${section.class_name} — ${section.name}`
+    : section.name;
+}
 
 /** Both the date inputs and the backend speak ISO, so no conversion is needed. */
 const TODAY_ISO = new Date().toISOString().slice(0, 10);
@@ -77,11 +121,23 @@ function valuesFrom(student: StudentDetail | null): FormValues {
     religion: student?.religion ?? "",
     category: student?.category ?? "",
     is_active: student?.is_active ?? true,
+    class_id: "",
+    section_id: "",
+    roll_number: "",
   };
 }
 
-function validate(values: FormValues, mode: Mode): FormErrors {
+function validate(
+  values: FormValues,
+  mode: Mode,
+  placement: Placement | null
+): FormErrors {
   const errors: FormErrors = {};
+
+  if (mode === "create" && placement) {
+    if (!values.class_id) errors.class_id = "Select a class.";
+    if (!values.section_id) errors.section_id = "Select a section.";
+  }
 
   if (mode === "create" && !values.admission_number.trim()) {
     errors.admission_number = "Admission number is required.";
@@ -161,11 +217,14 @@ type Mode = "create" | "edit";
 function StudentForm({
   mode,
   student,
+  placement,
   onCancel,
   onSaved,
 }: {
   mode: Mode;
   student: StudentDetail | null;
+  /** Create mode only: the year and sections a new student can be placed into. */
+  placement?: Placement | null;
   onCancel: () => void;
   onSaved: () => void;
 }) {
@@ -175,8 +234,19 @@ function StudentForm({
   const [errors, setErrors] = React.useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
+  const sections = placement?.sections;
+  const availableSections = React.useMemo(
+    () => (sections ? sectionsForClass(sections, values.class_id) : []),
+    [sections, values.class_id]
+  );
+
   function set<K extends keyof FormValues>(key: K, value: FormValues[K]) {
-    setValues((current) => ({ ...current, [key]: value }));
+    setValues((current) => ({
+      ...current,
+      [key]: value,
+      // A section belongs to one class, so the old pick is never still valid.
+      ...(key === "class_id" ? { section_id: "" } : {}),
+    }));
     // Clear as they type — a stale error under a corrected field reads as a bug.
     setErrors((current) =>
       current[key] ? { ...current, [key]: undefined } : current
@@ -187,18 +257,50 @@ function StudentForm({
     event.preventDefault();
     if (isSubmitting) return;
 
-    const found = validate(values, mode);
+    const found = validate(values, mode, placement ?? null);
     if (Object.keys(found).length > 0) {
       setErrors(found);
       return;
     }
 
+    const name = `${values.first_name.trim()} ${values.last_name.trim()}`;
+
     setIsSubmitting(true);
     try {
       if (mode === "create") {
-        await createStudent(buildCreatePayload(values));
+        const created = await createStudent(buildCreatePayload(values));
+
+        if (placement && values.section_id) {
+          // The student record already exists by now. If the enrolment call
+          // fails we must not report a plain failure — that would send them to
+          // re-add a student who is already on the roll.
+          try {
+            await createEnrollment({
+              student_id: created.id,
+              section_id: values.section_id,
+              academic_year_id: placement.year.id,
+              ...(values.roll_number.trim()
+                ? { roll_number: values.roll_number.trim() }
+                : {}),
+            });
+          } catch (cause: unknown) {
+            toast.warning("Student added, but not placed in a class", {
+              description: `${name} is on the roll. Open their Enrollment tab to assign the class. (${
+                cause instanceof Error ? cause.message : "Enrolment failed"
+              })`,
+            });
+            onSaved();
+            return;
+          }
+        }
+
         toast.success("Student added", {
-          description: `${values.first_name.trim()} ${values.last_name.trim()} is now on the roll.`,
+          description: placement && values.section_id
+            ? `${name} is on the roll in ${sectionLabel(
+                placement.sections,
+                values.section_id
+              )}.`
+            : `${name} is now on the roll.`,
         });
       } else if (student) {
         const patch = buildPatch(values, initial);
@@ -318,6 +420,97 @@ function StudentForm({
             </Select>
           </Field>
         </div>
+
+        {/*
+          Class placement is create-only. Moving a student later is a transfer,
+          which the Enrollment tab owns — offering it here too would give one
+          fact two owners.
+        */}
+        {mode === "create" && placement && (
+          <div className="space-y-4 rounded-xl border bg-muted/30 p-3">
+            <p className="text-xs font-medium text-muted-foreground">
+              Class placement · {placement.year.name?.trim() || "current year"}
+            </p>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field id="class_id" label="Class" error={errors.class_id}>
+                <Select
+                  value={values.class_id}
+                  onValueChange={(value) => set("class_id", value)}
+                  disabled={isSubmitting || placement.classes.length === 0}
+                >
+                  <SelectTrigger
+                    {...fieldProps("class_id", errors.class_id)}
+                    className="h-9 w-full rounded-xl"
+                  >
+                    <SelectValue
+                      placeholder={
+                        placement.classes.length === 0
+                          ? "No classes set up"
+                          : "Select a class"
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {placement.classes.map((schoolClass) => (
+                      <SelectItem
+                        key={schoolClass.id}
+                        value={String(schoolClass.id)}
+                      >
+                        {schoolClass.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+
+              <Field id="section_id" label="Section" error={errors.section_id}>
+                <Select
+                  value={values.section_id}
+                  onValueChange={(value) => set("section_id", value)}
+                  disabled={
+                    isSubmitting ||
+                    !values.class_id ||
+                    availableSections.length === 0
+                  }
+                >
+                  <SelectTrigger
+                    {...fieldProps("section_id", errors.section_id)}
+                    className="h-9 w-full rounded-xl"
+                  >
+                    <SelectValue
+                      placeholder={
+                        !values.class_id
+                          ? "Pick a class first"
+                          : availableSections.length === 0
+                            ? "No sections in this class"
+                            : "Select a section"
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableSections.map((section) => (
+                      <SelectItem key={section.id} value={String(section.id)}>
+                        {section.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+            </div>
+
+            <Field id="roll_number" label="Roll Number (optional)">
+              <Input
+                {...fieldProps("roll_number")}
+                value={values.roll_number}
+                onChange={(e) => set("roll_number", e.target.value)}
+                disabled={isSubmitting}
+                placeholder="e.g. 14"
+                className="h-9 rounded-xl sm:max-w-[calc(50%-0.5rem)]"
+              />
+            </Field>
+          </div>
+        )}
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Field id="blood_group" label="Blood Group (optional)">
@@ -522,6 +715,88 @@ function EditLoader({
 }
 
 /* -------------------------------------------------------------------------- */
+/*                               Create loader                                */
+/* -------------------------------------------------------------------------- */
+
+type PlacementState =
+  | { status: "loading" }
+  | { status: "ready"; placement: Placement | null }
+  | { status: "failed" };
+
+/**
+ * Loads the classes a new student can be placed into. A failure here never
+ * blocks the form: adding the student is the point, and the class can still be
+ * set from their Enrollment tab afterwards.
+ */
+function CreateLoader({
+  onCancel,
+  onSaved,
+}: {
+  onCancel: () => void;
+  onSaved: () => void;
+}) {
+  const [state, setState] = React.useState<PlacementState>({
+    status: "loading",
+  });
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    async function load(): Promise<Placement | null> {
+      const [year, classes] = await Promise.all([
+        getCurrentAcademicYear(),
+        listClasses(),
+      ]);
+      if (!year) return null;
+
+      const sections = await listSections(year.id);
+      return sections.length > 0 ? { year, classes, sections } : null;
+    }
+
+    load()
+      .then((placement) => {
+        if (!cancelled) setState({ status: "ready", placement });
+      })
+      .catch(() => {
+        if (!cancelled) setState({ status: "failed" });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (state.status === "loading") return <FormSkeleton />;
+
+  const placement = state.status === "ready" ? state.placement : null;
+
+  return (
+    <>
+      {state.status === "failed" && (
+        <p className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-400">
+          Could not load the class list. You can still add the student — set
+          their class from the Enrollment tab afterwards.
+        </p>
+      )}
+      {state.status === "ready" && !placement && (
+        <p className="rounded-xl border bg-muted/50 p-3 text-xs text-muted-foreground">
+          No academic year or sections are set up yet, so this student will be
+          added without a class. Finish Academic Setup, then place them from
+          their Enrollment tab.
+        </p>
+      )}
+      <StudentForm
+        mode="create"
+        student={null}
+        placement={placement}
+        onCancel={onCancel}
+        onSaved={onSaved}
+      />
+    </>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
 /*                                   Dialog                                   */
 /* -------------------------------------------------------------------------- */
 
@@ -562,18 +837,13 @@ export function StudentFormDialog({
           </DialogTitle>
           <DialogDescription>
             {mode === "create"
-              ? "Enrol a new student on the roll. Optional details can be filled in later."
+              ? "Enrol a new student and place them in a class. Optional details can be filled in later."
               : "Update this student's record. Only the fields you change are sent."}
           </DialogDescription>
         </DialogHeader>
 
         {mode === "create" ? (
-          <StudentForm
-            mode="create"
-            student={null}
-            onCancel={close}
-            onSaved={handleSaved}
-          />
+          <CreateLoader onCancel={close} onSaved={handleSaved} />
         ) : studentId != null ? (
           <EditLoader
             studentId={studentId}
